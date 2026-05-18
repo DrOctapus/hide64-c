@@ -26,15 +26,18 @@ def generate_dynamic_config(input_video, temp_yuv, temp_264, config_filename="we
 
     # r_frame_rate comes back as a fraction (e.g., "60000/1001" or "30/1")
     num, den = map(int, video_info["r_frame_rate"].split("/"))
-    fps = num / den
+    fps = int(num / den)
 
     config_text = f"""
 SourceWidth             {width}
 SourceHeight            {height}
 InputFile               {temp_yuv}
 OutputFile              {temp_264}
-MaxFrameRate            {fps:.2f}
+MaxFrameRate            {fps}
 FramesToBeEncoded       -1
+
+TemporalLayerNum        1
+MultipleThreadIdc       1
 
 TargetBitrate           5000
 EnableRC                1
@@ -44,11 +47,12 @@ MinQp                   0
 NumLayers               1
 Layer1SpatialWidth      {width}
 Layer1SpatialHeight     {height}
+Layer1FrameRate         {fps}
 """
     with open(config_filename, "w") as f:
         f.write(config_text)
 
-    print(f"[*] Generated config: {width}x{height} @ {fps:.2f} FPS")
+    print(f"[*] Generated config: {width}x{height} @ {fps} FPS")
 
 
 def prep_payload(secret_file, password):
@@ -87,7 +91,8 @@ def hide_data(in_video, secret_file, password, output_mp4):
 
     # Use FFmpeg to Decode to Raw YUV
     print("[*] Decoding MP4 to Raw YUV...")
-    subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # -------
+    # subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     generate_dynamic_config(in_video, temp_yuv, temp_264)
 
@@ -175,4 +180,4 @@ if __name__ == "__main__":
     pwd = "1234"
     hide_data(input_video, secret, pwd, output_video)
     print("---------------")
-    unhide_data(output_video, pwd)
+    # unhide_data(output_video, pwd)
