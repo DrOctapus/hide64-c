@@ -15,44 +15,17 @@ def generate_key(password: str):
     return base64.urlsafe_b64encode(kdf.derive(password.encode()))
 
 
-def generate_dynamic_config(input_video, temp_yuv, temp_264, config_filename="welsenc.cfg"):
-    cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate", "-of", "json", input_video]
-
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
-    video_info = json.loads(result.stdout)["streams"][0]
-
-    width = video_info["width"]
-    height = video_info["height"]
-
-    # r_frame_rate comes back as a fraction (e.g., "60000/1001" or "30/1")
-    num, den = map(int, video_info["r_frame_rate"].split("/"))
-    fps = int(num / den)
-
-    config_text = f"""
-SourceWidth             {width}
-SourceHeight            {height}
-InputFile               {temp_yuv}
-OutputFile              {temp_264}
-MaxFrameRate            {fps}
-FramesToBeEncoded       -1
-
-TemporalLayerNum        1
+def generate_dynamic_config(config_filename="welsenc.cfg"):
+    config_text = """
+UsageType               0
 MultipleThreadIdc       1
-
 TargetBitrate           5000
 EnableRC                1
 MaxQp                   51
 MinQp                   0
-
-NumLayers               1
-Layer1SpatialWidth      {width}
-Layer1SpatialHeight     {height}
-Layer1FrameRate         {fps}
 """
     with open(config_filename, "w") as f:
         f.write(config_text)
-
-    print(f"[*] Generated config: {width}x{height} @ {fps} FPS")
 
 
 def prep_payload(secret_file, password):
@@ -89,15 +62,28 @@ def hide_data(in_video, secret_file, password, output_mp4):
     temp_yuv = "temp_raw.yuv"
     temp_264 = "temp_stealth.264"
 
+    # Use FFprobe to get exact dimensions and framerate
+    cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate", "-of", "json", in_video]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
+    video_info = json.loads(result.stdout)["streams"][0]
+    width = str(video_info["width"])
+    height = str(video_info["height"])
+    num, den = map(int, video_info["r_frame_rate"].split("/"))
+    fps = str(int(num / den))
+
+    print(f"[*] Target Video Profile: {width}x{height} @ {fps} FPS")
+
     # Use FFmpeg to Decode to Raw YUV
     print("[*] Decoding MP4 to Raw YUV...")
-    # -------
-    # subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    generate_dynamic_config(in_video, temp_yuv, temp_264)
+    generate_dynamic_config()
 
     print("[*] Spinning up OpenH264 to inject data...")
-    encode_process = subprocess.run(["./hide64_enc.exe", "welsenc.cfg"])
+
+    encode_cmd = ["./hide64_enc.exe", "welsenc.cfg", "-org", temp_yuv, "-bf", temp_264, "-sw", width, "-sh", height, "-frin", fps, "-numtl", "1", "-numl", "1", "-dw", "0", width, "-dh", "0", height, "-frout", "0", fps]
+
+    encode_process = subprocess.run(encode_cmd)
 
     if encode_process.returncode != 0:
         print("[-] An error occurred during OpenH264 encoding.")
@@ -130,7 +116,7 @@ def unhide_data(stego_video, password):
 
     # Run the modified unhide64 Decoder
     print("[*] Running OpenH264 decoder to extract binary payload...")
-    subprocess.run(["./hide64_dec.exe", temp_264, dummy_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["./hide64_dec.exe", temp_264, dummy_yuv])
 
     extracted_files = glob.glob("extracted_payload*")
 
@@ -178,6 +164,6 @@ if __name__ == "__main__":
     output_video = os.path.join(script_dir, "final_stego_video.mp4")
 
     pwd = "1234"
-    hide_data(input_video, secret, pwd, output_video)
+    # hide_data(input_video, secret, pwd, output_video)
     print("---------------")
-    # unhide_data(output_video, pwd)
+    unhide_data(output_video, pwd)
