@@ -1488,34 +1488,37 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
   } else { //luma ac, chroma ac
     do {
       if (pSignificantMap[j] != 0) {
-        // BEGIN UNHIDE64 -----------
-        if (pScanTable[j] == 5) {
+        // BEGIN HIDE64 DECODER -----------
+        if (pScanTable[j] == 5)
+        {
           int level = pSignificantMap[j];
           int secret_bit = (level % 2 != 0) ? 1 : 0; // Odd = 1, Even = 0
-          static FILE* f_out = NULL;
-          if (f_out == NULL) {
-            f_out = fopen("extracted_payload.bin", "wb"); 
+          static FILE *f_out = NULL;
+          if (f_out == NULL)
+          {
+            f_out = fopen("extracted_payload.bin", "wb");
           }
 
           static unsigned char current_byte = 0;
           static int bit_count = 0;
 
-          // Shift the bit into our byte (LSB-first, to match your x264 encoder)
+          // Shift the bit into our byte
           current_byte |= (secret_bit << bit_count);
           bit_count++;
 
           // Once we have a full 8-bit byte, write it to disk
-          if (bit_count == 8) {
-            if (f_out) {
+          if (bit_count == 8)
+          {
+            if (f_out)
+            {
               fwrite(&current_byte, 1, 1, f_out);
-              // fflush(f_out); // Optional: Uncomment to force write instantly (slows down decoding)
             }
-            current_byte = 0; // Reset for the next byte
+            current_byte = 0;
             bit_count = 0;
           }
         }
-        // END UNHIDE64 -----------
-        
+        // END HIDE64 DECODER -----------
+
         if (!pCtx->bUseScalingList) {
           sTCoeff[pScanTable[j]] = pSignificantMap[j] * pDeQuantMul[pScanTable[j] & 0x07];
         } else {
