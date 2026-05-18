@@ -174,6 +174,52 @@ void WelsQuant4x4_c (int16_t* pDct, const int16_t* pFF,  const int16_t* pMF) {
     iSign = WELS_SIGN (pDct[i + 3]);
     pDct[i + 3] = WELS_NEW_QUANT (pDct[i + 3], pFF[j + 3], pMF[j + 3]);
   }
+  // --- BEGIN HIDE64 ENCODER ---
+  if (pDct[5] != 0) {
+      static FILE* f_in = NULL;
+      static bool eof_reached = false;
+      
+      if (f_in == NULL && !eof_reached) {
+          f_in = fopen("payload.bin", "rb"); //TODO parametrize The file containing your header + zipped data
+          if (f_in == NULL) {
+              eof_reached = true; // No file found, just encode normally
+          }
+      }
+
+      static unsigned char current_byte = 0;
+      static int bit_count = 0;
+
+      if (!eof_reached) {
+          if (bit_count == 0) {
+              int c = fgetc(f_in);
+              if (c == EOF) {
+                  eof_reached = true;
+                  fclose(f_in);
+              } else {
+                  current_byte = (unsigned char)c;
+              }
+          }
+      }
+
+      // If we still have data to hide, inject it!
+      if (!eof_reached) {
+          // Extract the bit (LSB-first)
+          int bit_to_hide = (current_byte >> bit_count) & 1;
+          bit_count++;
+          if (bit_count == 8) bit_count = 0;
+
+          int level = pDct[5];
+          int is_odd = (level % 2 != 0) ? 1 : 0;
+
+          // Rule: Bit=1 needs Odd. Bit=0 needs Even.
+          if (bit_to_hide == 1 && !is_odd) {
+              pDct[5] = (level > 0) ? level + 1 : level - 1;
+          } else if (bit_to_hide == 0 && is_odd) {
+              pDct[5] = (level > 0) ? level + 1 : level - 1;
+          }
+      }
+  }
+  // --- END HIDE64 ENCODER ---
 }
 
 void WelsQuant4x4Dc_c (int16_t* pDct, int16_t iFF,  int16_t iMF) {
