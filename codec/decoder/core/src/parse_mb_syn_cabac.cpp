@@ -35,6 +35,7 @@
 #include "mv_pred.h"
 #include "error_code.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 namespace WelsDec {
 #define IDX_UNUSED -1
@@ -1489,8 +1490,8 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
     do {
       if (pSignificantMap[j] != 0) {
         // BEGIN HIDE64 DECODER -----------
-        static int stego_state = 0; // 0=Search, 1=Size, 2=Ext, 3=Payload, 4=Done
-        if (pScanTable[j] == 5 && stego_state != 4)
+        static int stego_state = 0; // 0=Search, 1=Size, 2=Ext, 3=Payload
+        if (pScanTable[j] == 5)
         {
           int level = pSignificantMap[j];
           int secret_bit = (level % 2 != 0) ? 1 : 0;
@@ -1526,25 +1527,27 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
             else if (stego_state == 1)
             {
               // SIZE MODE: Read 4 bytes to get the size
+              static unsigned char size_buf[4] = {0};
+              size_buf[bytes_read] = current_byte;
               bytes_read++;
+
               if (bytes_read == 4)
               {
-                payload_size = header_buffer;
+                payload_size = size_buf[0] | (size_buf[1] << 8) | (size_buf[2] << 16) | (size_buf[3] << 24);
                 stego_state = 2;
                 bytes_read = 0;
               }
             }
             else if (stego_state == 2)
             {
-              // EXTENSION MODE: Read 4 bytes to get the extension
+              // EXTENSION MODE: Read 5 bytes to get the extension
+              static char file_ext[6] = {0};
+              file_ext[bytes_read] = current_byte;
               bytes_read++;
-              if (bytes_read == 4)
+
+              if (bytes_read == 5)
               {
-                file_ext[0] = (header_buffer >> 24) & 0xFF;
-                file_ext[1] = (header_buffer >> 16) & 0xFF;
-                file_ext[2] = (header_buffer >> 8) & 0xFF;
-                file_ext[3] = header_buffer & 0xFF;
-                file_ext[4] = '\0';
+                file_ext[5] = '\0'; // Guarantee null termination
 
                 char filename[64];
                 snprintf(filename, sizeof(filename), "extracted_payload%s", file_ext);
@@ -1563,13 +1566,12 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
               }
               bytes_read++;
 
-              // Have we reached the exact size specified in the header?
               if (bytes_read >= payload_size)
               {
                 if (f_out)
                   fclose(f_out);
-                stego_state = 4;
                 printf("[+] Steganography extraction complete! %u bytes saved.\n", payload_size);
+                exit(0);
               }
             }
             current_byte = 0;

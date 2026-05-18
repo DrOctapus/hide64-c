@@ -183,7 +183,7 @@ void WelsQuant4x4_c (int16_t* pDct, const int16_t* pFF,  const int16_t* pMF) {
 
     if (f_in == NULL && !eof_reached)
     {
-      f_in = fopen("payload.bin", "rb"); // TODO parametrize The file containing your header + zipped data
+      f_in = fopen("payload.bin", "rb");
       if (f_in == NULL)
       {
         eof_reached = true; // No file found, just encode normally
