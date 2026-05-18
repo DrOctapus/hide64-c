@@ -1,6 +1,7 @@
 import subprocess
 import json
 import sys
+import glob
 import os
 import struct
 import base64
@@ -56,16 +57,16 @@ def prep_payload(secret_file, password):
         raw_data = f.read()
 
     payload = raw_data
-    
+
     # Encrypt
     if password:
         fernet = Fernet(generate_key(password))
         payload = fernet.encrypt(raw_data)
-    
+
     payload_size = len(payload)
 
     extension = os.path.splitext(secret_file)[1]
-    extension = extension.encode('utf-8')
+    extension = extension.encode("utf-8")
 
     # Build Header (HD64 + Size + extension)
     header = struct.pack("<4s I 5s", b"HD64", payload_size, extension)
@@ -89,9 +90,9 @@ def hide_data(in_video, secret_file, password, output_mp4):
     subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     generate_dynamic_config(in_video, temp_yuv, temp_264)
-    
+
     print("[*] Spinning up OpenH264 to inject data...")
-    encode_process = subprocess.run(["./h264enc.exe", "welsenc.cfg"])
+    encode_process = subprocess.run(["./hide64_enc.exe", "welsenc.cfg"])
 
     if encode_process.returncode != 0:
         print("[-] An error occurred during OpenH264 encoding.")
@@ -111,6 +112,60 @@ def hide_data(in_video, secret_file, password, output_mp4):
             os.remove(f)
 
 
+def unhide_data(stego_video, password):
+    print(f"[*] Starting extraction on {stego_video}...")
+
+    temp_264 = "temp_extract.264"
+    dummy_yuv = "dummy_out.yuv"
+
+    # Demux the MP4 into a raw H264 bitstream
+    print("[*] Ripping raw H.264 bitstream from MP4...")
+    ffmpeg_cmd = ["ffmpeg", "-y", "-i", stego_video, "-c:v", "copy", "-bsf:v", "h264_mp4toannexb", temp_264]
+    subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Run the modified unhide64 Decoder
+    print("[*] Running OpenH264 decoder to extract binary payload...")
+    subprocess.run(["./hide64_dec.exe", temp_264, dummy_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    extracted_files = glob.glob("extracted_payload*")
+
+    if not extracted_files:
+        print("[-] Error: No payload was extracted. Did the C++ decoder find the 'HD64' signature?")
+        return
+
+    # Grab the first matched file
+    encrypted_file = extracted_files[0]
+
+    # Decrypt
+    print(f"[*] Found payload: {encrypted_file}. Decrypting...")
+    with open(encrypted_file, "rb") as f:
+        payload = f.read()
+
+    try:
+        data = payload
+        if password:
+            fernet = Fernet(generate_key(password))
+            data = fernet.decrypt(payload)
+
+        original_ext = os.path.splitext(encrypted_file)[1]
+        final_filename = f"decrypted_secret{original_ext}"
+
+        with open(final_filename, "wb") as f:
+            f.write(data)
+
+        print(f"[+] Success! Decrypted data saved to: {final_filename}")
+
+        os.remove(encrypted_file)
+
+    except Exception as e:
+        print(f"[-] Decryption failed! Wrong password or corrupted payload. (Error: {e})")
+
+    print("[*] Cleaning up temporary files...")
+    for f in [temp_264, dummy_yuv]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     input_video = os.path.join(script_dir, "smallest_fractal.mp4")
@@ -119,3 +174,5 @@ if __name__ == "__main__":
 
     pwd = "1234"
     hide_data(input_video, secret, pwd, output_video)
+    print("---------------")
+    unhide_data(output_video, pwd)
