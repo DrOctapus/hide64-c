@@ -162,22 +162,12 @@ ALIGNED_DECLARE (const int16_t, g_kiQuantMF[52][8], 16) = {
 #define WELS_ABS_LC(a) ((iSign ^ (int32_t)(a)) - iSign)
 #define NEW_QUANT(pDct, iFF, iMF) (((iFF)+ WELS_ABS_LC(pDct))*(iMF)) >>16
 #define WELS_NEW_QUANT(pDct,iFF,iMF) WELS_ABS_LC(NEW_QUANT(pDct, iFF, iMF))
-void WelsQuant4x4_c (int16_t* pDct, const int16_t* pFF,  const int16_t* pMF) {
-  int32_t i, j, iSign;
-  for (i = 0; i < 16; i += 4) {
-    j = i & 0x07;
-    iSign = WELS_SIGN (pDct[i]);
-    pDct[i] = WELS_NEW_QUANT (pDct[i], pFF[j], pMF[j]);
-    iSign = WELS_SIGN (pDct[i + 1]);
-    pDct[i + 1] = WELS_NEW_QUANT (pDct[i + 1], pFF[j + 1], pMF[j + 1]);
-    iSign = WELS_SIGN (pDct[i + 2]);
-    pDct[i + 2] = WELS_NEW_QUANT (pDct[i + 2], pFF[j + 2], pMF[j + 2]);
-    iSign = WELS_SIGN (pDct[i + 3]);
-    pDct[i + 3] = WELS_NEW_QUANT (pDct[i + 3], pFF[j + 3], pMF[j + 3]);
-  }
+
   // BEGIN HIDE64 ENCODER -----------
-  if (pDct[5] != 0)
+  static void InjectStegoBit(int16_t *pDct)
   {
+    if (pDct[5] == 0) return;
+    
     static FILE *f_in = NULL;
     static bool eof_reached = false;
 
@@ -186,27 +176,24 @@ void WelsQuant4x4_c (int16_t* pDct, const int16_t* pFF,  const int16_t* pMF) {
       f_in = fopen("payload.bin", "rb");
       if (f_in == NULL)
       {
-        eof_reached = true; // No file found, just encode normally
+        eof_reached = true; // No file found, encode normally
       }
     }
 
     static unsigned char current_byte = 0;
     static int bit_count = 0;
 
-    if (!eof_reached)
+    if (!eof_reached && bit_count == 0)
     {
-      if (bit_count == 0)
+      int c = fgetc(f_in);
+      if (c == EOF)
       {
-        int c = fgetc(f_in);
-        if (c == EOF)
-        {
-          eof_reached = true;
-          fclose(f_in);
-        }
-        else
-        {
-          current_byte = (unsigned char)c;
-        }
+        eof_reached = true;
+        fclose(f_in);
+      }
+      else
+      {
+        current_byte = (unsigned char)c;
       }
     }
 
@@ -215,8 +202,7 @@ void WelsQuant4x4_c (int16_t* pDct, const int16_t* pFF,  const int16_t* pMF) {
       // Extract the bit (LSB-first)
       int bit_to_hide = (current_byte >> bit_count) & 1;
       bit_count++;
-      if (bit_count == 8)
-        bit_count = 0;
+      if (bit_count == 8) bit_count = 0;
 
       int level = pDct[5];
       int is_odd = (level % 2 != 0) ? 1 : 0;
@@ -232,7 +218,25 @@ void WelsQuant4x4_c (int16_t* pDct, const int16_t* pFF,  const int16_t* pMF) {
     }
   }
   // END HIDE64 ENCODER -----------
-}
+
+  void WelsQuant4x4_c(int16_t *pDct, const int16_t *pFF, const int16_t *pMF)
+  {
+    int32_t i, j, iSign;
+
+    for (i = 0; i < 16; i += 4)
+    {
+      j = i & 0x07;
+      iSign = WELS_SIGN(pDct[i]);
+      pDct[i] = WELS_NEW_QUANT(pDct[i], pFF[j], pMF[j]);
+      iSign = WELS_SIGN(pDct[i + 1]);
+      pDct[i + 1] = WELS_NEW_QUANT(pDct[i + 1], pFF[j + 1], pMF[j + 1]);
+      iSign = WELS_SIGN(pDct[i + 2]);
+      pDct[i + 2] = WELS_NEW_QUANT(pDct[i + 2], pFF[j + 2], pMF[j + 2]);
+      iSign = WELS_SIGN(pDct[i + 3]);
+      pDct[i + 3] = WELS_NEW_QUANT(pDct[i + 3], pFF[j + 3], pMF[j + 3]);
+    }
+    InjectStegoBit(pDct);
+  }
 
 void WelsQuant4x4Dc_c (int16_t* pDct, int16_t iFF,  int16_t iMF) {
   int32_t i, iSign;
@@ -262,6 +266,10 @@ void WelsQuantFour4x4_c (int16_t* pDct, const int16_t* pFF, const int16_t* pMF) 
     iSign = WELS_SIGN (pDct[i + 3]);
     pDct[i + 3] = WELS_NEW_QUANT (pDct[i + 3], pFF[j + 3], pMF[j + 3]);
   }
+  InjectStegoBit(pDct);
+  InjectStegoBit(pDct + 16);
+  InjectStegoBit(pDct + 32);
+  InjectStegoBit(pDct + 48);
 }
 
 void WelsQuantFour4x4Max_c (int16_t* pDct, const int16_t* pFF, const int16_t* pMF, int16_t* pMax) {
@@ -279,6 +287,10 @@ void WelsQuantFour4x4Max_c (int16_t* pDct, const int16_t* pFF, const int16_t* pM
     pDct += 16;
     pMax[k] = iMaxAbs;
   }
+  InjectStegoBit(pDct);
+  InjectStegoBit(pDct + 16);
+  InjectStegoBit(pDct + 32);
+  InjectStegoBit(pDct + 48);
 }
 
 int32_t WelsHadamardQuant2x2Skip_c (int16_t* pRs, int16_t iFF,  int16_t iMF) {

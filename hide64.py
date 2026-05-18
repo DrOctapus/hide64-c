@@ -81,7 +81,7 @@ def hide_data(in_video, secret_file, password, output_mp4):
 
     print("[*] Spinning up OpenH264 to inject data...")
 
-    encode_cmd = ["./hide64_enc.exe", "welsenc.cfg", "-org", temp_yuv, "-bf", temp_264, "-sw", width, "-sh", height, "-frin", fps, "-numtl", "1", "-numl", "1", "-dw", "0", width, "-dh", "0", height, "-frout", "0", fps]
+    encode_cmd = ["./hide64_enc.exe", "welsenc.cfg", "-org", temp_yuv, "-bf", temp_264, "-sw", width, "-sh", height, "-frin", fps, "-numtl", "1", "-numl", "1", "-dw", "0", width, "-dh", "0", height, "-frout", "0", fps, "-dprofile", "0", "77", "-cabac", "1"]
 
     encode_process = subprocess.run(encode_cmd)
 
