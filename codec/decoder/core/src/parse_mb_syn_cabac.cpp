@@ -1489,29 +1489,88 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
     do {
       if (pSignificantMap[j] != 0) {
         // BEGIN HIDE64 DECODER -----------
-        if (pScanTable[j] == 5)
+        static int stego_state = 0; // 0=Search, 1=Size, 2=Ext, 3=Payload, 4=Done
+        if (pScanTable[j] == 5 && stego_state != 4)
         {
           int level = pSignificantMap[j];
-          int secret_bit = (level % 2 != 0) ? 1 : 0; // Odd = 1, Even = 0
-          static FILE *f_out = NULL;
-          if (f_out == NULL)
-          {
-            f_out = fopen("extracted_payload.bin", "wb");
-          }
+          int secret_bit = (level % 2 != 0) ? 1 : 0;
 
           static unsigned char current_byte = 0;
           static int bit_count = 0;
+          static uint32_t header_buffer = 0; // 4-byte sliding window
+
+          static uint32_t payload_size = 0;
+          static char file_ext[5] = {0};
+          static uint32_t bytes_read = 0;
+          static FILE *f_out = NULL;
 
           // Shift the bit into our byte
           current_byte |= (secret_bit << bit_count);
           bit_count++;
 
-          // Once we have a full 8-bit byte, write it to disk
           if (bit_count == 8)
           {
-            if (f_out)
+            // Shift the new byte into 4-byte window
+            header_buffer = (header_buffer << 8) | current_byte;
+
+            if (stego_state == 0)
             {
-              fwrite(&current_byte, 1, 1, f_out);
+              // SEARCH MODE: Looking for 'H' (0x48), 'D' (0x44), '6' (0x36), '4' (0x34)
+              if (header_buffer == 0x48443634)
+              {
+                stego_state = 1;
+                bytes_read = 0;
+                printf("[+] Signature 'HD64' found\n[-] Starting extraction...\n");
+              }
+            }
+            else if (stego_state == 1)
+            {
+              // SIZE MODE: Read 4 bytes to get the size
+              bytes_read++;
+              if (bytes_read == 4)
+              {
+                payload_size = header_buffer;
+                stego_state = 2;
+                bytes_read = 0;
+              }
+            }
+            else if (stego_state == 2)
+            {
+              // EXTENSION MODE: Read 4 bytes to get the extension
+              bytes_read++;
+              if (bytes_read == 4)
+              {
+                file_ext[0] = (header_buffer >> 24) & 0xFF;
+                file_ext[1] = (header_buffer >> 16) & 0xFF;
+                file_ext[2] = (header_buffer >> 8) & 0xFF;
+                file_ext[3] = header_buffer & 0xFF;
+                file_ext[4] = '\0';
+
+                char filename[64];
+                snprintf(filename, sizeof(filename), "extracted_payload%s", file_ext);
+                f_out = fopen(filename, "wb");
+
+                stego_state = 3;
+                bytes_read = 0;
+              }
+            }
+            else if (stego_state == 3)
+            {
+              // PAYLOAD MODE: Write exact bytes to file
+              if (f_out)
+              {
+                fwrite(&current_byte, 1, 1, f_out);
+              }
+              bytes_read++;
+
+              // Have we reached the exact size specified in the header?
+              if (bytes_read >= payload_size)
+              {
+                if (f_out)
+                  fclose(f_out);
+                stego_state = 4;
+                printf("[+] Steganography extraction complete! %u bytes saved.\n", payload_size);
+              }
             }
             current_byte = 0;
             bit_count = 0;
