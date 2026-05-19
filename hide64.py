@@ -19,6 +19,7 @@ def generate_dynamic_config(config_filename="welsenc.cfg"):
     config_text = """
 UsageType               0
 MultipleThreadIdc       1
+SliceMode               0
 TargetBitrate           5000
 EnableRC                1
 MaxQp                   51
