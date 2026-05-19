@@ -458,29 +458,61 @@ void  WelsWriteBlockResidualCabac (SMbCache* pMbCache, SMB* pCurMb, uint32_t iMb
   int32_t iCtx = WelsGetMbCtxCabac (pMbCache, pCurMb, iMbWidth, eCtxBlockCat, iIdx);
   if (iNonZeroCount) {
     // --- HIDE64 INJECTION START ---
-    // Inject into ALL AC blocks (Luma and Chroma) to guarantee synchronization
     if ((eCtxBlockCat == LUMA_AC || eCtxBlockCat == LUMA_4x4 || eCtxBlockCat == CHROMA_AC) && pBlock[5] != 0)
     {
-      int level = pBlock[5];
-
-      static unsigned char test_byte = 0xA1; // Still stress testing A1 (10100001)
+      static FILE *f_in = NULL;
+      static bool eof_reached = false;
+      static unsigned char current_byte = 0;
       static int bit_count = 0;
 
-      int bit_to_hide = (test_byte >> bit_count) & 1;
-      bit_count = (bit_count + 1) % 8;
-
-      // Extract current state (Odd = 1, Even = 0)
-      int is_odd = (level % 2 != 0) ? 1 : 0;
-
-      if (bit_to_hide == 1 && !is_odd)
+      // Open the payload file
+      if (f_in == NULL && !eof_reached)
       {
-        // Needs Odd. Current is Even. Push away from zero.
-        pBlock[5] = (level > 0) ? level + 1 : level - 1;
+        f_in = fopen("payload.bin", "rb");
+        if (f_in == NULL)
+        {
+          eof_reached = true;
+        }
+        else
+        {
+          printf("[*] HIDE64: Successfully opened payload.bin for injection!\n");
+        }
       }
-      else if (bit_to_hide == 0 && is_odd)
+
+      if (!eof_reached && bit_count == 0)
       {
-        // Needs Even. Current is Odd. Push away from zero.
-        pBlock[5] = (level > 0) ? level + 1 : level - 1;
+        int c = fgetc(f_in);
+        if (c == EOF)
+        {
+          eof_reached = true;
+          fclose(f_in);
+          f_in = NULL;
+          printf("[*] HIDE64: Payload fully injected into video stream!\n");
+        }
+        else
+        {
+          current_byte = (unsigned char)c;
+        }
+      }
+
+      if (!eof_reached)
+      {
+        int bit_to_hide = (current_byte >> bit_count) & 1;
+        bit_count = (bit_count + 1) % 8;
+
+        int level = pBlock[5];
+
+        // Extract current state (Odd = 1, Even = 0)
+        int is_odd = (level % 2 != 0) ? 1 : 0;
+
+        if (bit_to_hide == 1 && !is_odd)
+        {
+          pBlock[5] = (level > 0) ? level + 1 : level - 1;
+        }
+        else if (bit_to_hide == 0 && is_odd)
+        {
+          pBlock[5] = (level > 0) ? level + 1 : level - 1;
+        }
       }
     }
     // --- HIDE64 INJECTION END ---

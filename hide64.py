@@ -42,16 +42,16 @@ def prep_payload(secret_file, password):
 
     payload_size = len(payload)
 
-    extension = os.path.splitext(secret_file)[1]
+    extension = os.path.splitext(secret_file)[1][1:]
     extension = extension.encode("utf-8")
 
     # Build Header (HD64 + Size + extension)
-    header = struct.pack("<4s I 5s", b"HD64", payload_size, extension)
+    header = struct.pack("<4s I 4s", b"HD64", payload_size, extension)
 
     # Save to binary for OpenH264 C++ to read
     with open("payload.bin", "wb") as f:
         f.write(header + payload)
-    print(f"[+] Payload armed: {payload_size + 13} bytes.")
+    print(f"[+] Payload armed: {payload_size + 12} bytes.")
 
 
 def hide_data(in_video, secret_file, password, output_mp4):
@@ -75,7 +75,8 @@ def hide_data(in_video, secret_file, password, output_mp4):
 
     # Use FFmpeg to Decode to Raw YUV
     print("[*] Decoding MP4 to Raw YUV...")
-    # subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not os.path.exists(temp_yuv):
+        subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     generate_dynamic_config()
 
@@ -93,10 +94,9 @@ def hide_data(in_video, secret_file, password, output_mp4):
         "-dprofile", "0", "77", 
         "-cabac", "1",
         "-frms", "-1",
-        # "-trace", "4"    # <--- FORCES EXTREME DEBUG LOGGING
     ]
 
-    encode_process = subprocess.run(encode_cmd)
+    encode_process = subprocess.run(encode_cmd, stdout=subprocess.DEVNULL)
 
     if encode_process.returncode != 0:
         print("[-] An error occurred during OpenH264 encoding.")
@@ -111,7 +111,7 @@ def hide_data(in_video, secret_file, password, output_mp4):
     # Use FFmpeg to Mux the video and original audio back together
     ffmpeg_mux_cmd = ["ffmpeg", "-y", "-i", temp_264, "-i", in_video, "-c:v", "copy", "-c:a", "copy", "-map", "0:v:0", "-map", "1:a:0?", output_mp4]
 
-    subprocess.run(ffmpeg_mux_cmd)
+    subprocess.run(ffmpeg_mux_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"[+] Success! Data hidden inside {output_mp4}")
 
     return
