@@ -76,7 +76,7 @@ def hide_data(in_video, secret_file, password, output_mp4):
 
     # Use FFmpeg to Decode to Raw YUV
     print("[*] Decoding MP4 to Raw YUV...")
-    subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # subprocess.run(["ffmpeg", "-y", "-i", in_video, "-pix_fmt", "yuv420p", temp_yuv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     generate_dynamic_config()
 
@@ -98,6 +98,7 @@ def hide_data(in_video, secret_file, password, output_mp4):
     subprocess.run(ffmpeg_mux_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"[+] Success! Data hidden inside {output_mp4}")
 
+    return
     # Cleanup
     for f in [temp_yuv, temp_264, "payload.bin", "welsenc.cfg"]:
         if os.path.exists(f):
@@ -153,6 +154,7 @@ def unhide_data(stego_video, password):
         print(f"[-] Decryption failed! Wrong password or corrupted payload. (Error: {e})")
 
     print("[*] Cleaning up temporary files...")
+    return
     for f in [temp_264, dummy_yuv]:
         if os.path.exists(f):
             os.remove(f)
@@ -164,7 +166,7 @@ if __name__ == "__main__":
     secret = os.path.join(script_dir, "pass.txt")
     output_video = os.path.join(script_dir, "final_stego_video.mp4")
 
-    pwd = "1234"
-    # hide_data(input_video, secret, pwd, output_video)
+    pwd = None
+    hide_data(input_video, secret, pwd, output_video)
     print("---------------")
     unhide_data(output_video, pwd)

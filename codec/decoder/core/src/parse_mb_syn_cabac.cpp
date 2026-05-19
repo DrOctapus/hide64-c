@@ -1488,97 +1488,39 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
     }
   } else { //luma ac, chroma ac
     do {
-      if (pSignificantMap[j] != 0) {
-        // BEGIN HIDE64 DECODER -----------
-        static int stego_state = 0; // 0=Search, 1=Size, 2=Ext, 3=Payload
+      if (pSignificantMap[j] != 0)
+      {
+        // BEGIN HIDE64 RAW DUMP -----------
         if (pScanTable[j] == 5)
         {
           int level = pSignificantMap[j];
           int secret_bit = (level % 2 != 0) ? 1 : 0;
 
+          static FILE *f_out = NULL;
+          if (f_out == NULL)
+          {
+            f_out = fopen("raw_dump.bin", "wb");
+            if (f_out)
+              printf("[*] Opened raw_dump.bin for writing...\n");
+          }
+
           static unsigned char current_byte = 0;
           static int bit_count = 0;
-          static uint32_t header_buffer = 0; // 4-byte sliding window
 
-          static uint32_t payload_size = 0;
-          static char file_ext[5] = {0};
-          static uint32_t bytes_read = 0;
-          static FILE *f_out = NULL;
-
-          // Shift the bit into our byte
           current_byte |= (secret_bit << bit_count);
           bit_count++;
 
           if (bit_count == 8)
           {
-            // Shift the new byte into 4-byte window
-            header_buffer = (header_buffer << 8) | current_byte;
-
-            if (stego_state == 0)
+            if (f_out)
             {
-              // SEARCH MODE: Looking for 'H' (0x48), 'D' (0x44), '6' (0x36), '4' (0x34)
-              if (header_buffer == 0x48443634)
-              {
-                stego_state = 1;
-                bytes_read = 0;
-                printf("[+] Signature 'HD64' found\n[-] Starting extraction...\n");
-              }
-            }
-            else if (stego_state == 1)
-            {
-              // SIZE MODE: Read 4 bytes to get the size
-              static unsigned char size_buf[4] = {0};
-              size_buf[bytes_read] = current_byte;
-              bytes_read++;
-
-              if (bytes_read == 4)
-              {
-                payload_size = size_buf[0] | (size_buf[1] << 8) | (size_buf[2] << 16) | (size_buf[3] << 24);
-                stego_state = 2;
-                bytes_read = 0;
-              }
-            }
-            else if (stego_state == 2)
-            {
-              // EXTENSION MODE: Read 5 bytes to get the extension
-              static char file_ext[6] = {0};
-              file_ext[bytes_read] = current_byte;
-              bytes_read++;
-
-              if (bytes_read == 5)
-              {
-                file_ext[5] = '\0'; // Guarantee null termination
-
-                char filename[64];
-                snprintf(filename, sizeof(filename), "extracted_payload%s", file_ext);
-                f_out = fopen(filename, "wb");
-
-                stego_state = 3;
-                bytes_read = 0;
-              }
-            }
-            else if (stego_state == 3)
-            {
-              // PAYLOAD MODE: Write exact bytes to file
-              if (f_out)
-              {
-                fwrite(&current_byte, 1, 1, f_out);
-              }
-              bytes_read++;
-
-              if (bytes_read >= payload_size)
-              {
-                if (f_out)
-                  fclose(f_out);
-                printf("[+] Steganography extraction complete! %u bytes saved.\n", payload_size);
-                exit(0);
-              }
+              fwrite(&current_byte, 1, 1, f_out);
             }
             current_byte = 0;
             bit_count = 0;
           }
         }
-        // END HIDE64 DECODER -----------
+        // END HIDE64 RAW DUMP -----------
 
         if (!pCtx->bUseScalingList) {
           sTCoeff[pScanTable[j]] = pSignificantMap[j] * pDeQuantMul[pScanTable[j] & 0x07];

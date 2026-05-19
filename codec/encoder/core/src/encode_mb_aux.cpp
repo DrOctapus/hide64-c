@@ -163,61 +163,24 @@ ALIGNED_DECLARE (const int16_t, g_kiQuantMF[52][8], 16) = {
 #define NEW_QUANT(pDct, iFF, iMF) (((iFF)+ WELS_ABS_LC(pDct))*(iMF)) >>16
 #define WELS_NEW_QUANT(pDct,iFF,iMF) WELS_ABS_LC(NEW_QUANT(pDct, iFF, iMF))
 
-  // BEGIN HIDE64 ENCODER -----------
-  static void InjectStegoBit(int16_t *pDct)
-  {
-    if (pDct[5] == 0) return;
-    
-    static FILE *f_in = NULL;
-    static bool eof_reached = false;
+static void InjectStegoBit(int16_t* pDct) {
+  if (pDct[5] == 0) return;
 
-    if (f_in == NULL && !eof_reached)
-    {
-      f_in = fopen("payload.bin", "rb");
-      if (f_in == NULL)
-      {
-        eof_reached = true; // No file found, encode normally
-      }
-    }
+  int level = pDct[5];
 
-    static unsigned char current_byte = 0;
-    static int bit_count = 0;
+  static unsigned char test_byte = 0xAA;
+  static int bit_count = 0;
 
-    if (!eof_reached && bit_count == 0)
-    {
-      int c = fgetc(f_in);
-      if (c == EOF)
-      {
-        eof_reached = true;
-        fclose(f_in);
-      }
-      else
-      {
-        current_byte = (unsigned char)c;
-      }
-    }
+  int bit_to_hide = (test_byte >> bit_count) & 1;
+  bit_count++;
+  if (bit_count == 8) bit_count = 0;
 
-    if (!eof_reached)
-    {
-      // Extract the bit (LSB-first)
-      int bit_to_hide = (current_byte >> bit_count) & 1;
-      bit_count++;
-      if (bit_count == 8) bit_count = 0;
-
-      int level = pDct[5];
-      int is_odd = (level % 2 != 0) ? 1 : 0;
-
-      if (bit_to_hide == 1 && !is_odd)
-      {
-        pDct[5] = (level > 0) ? level + 1 : level - 1;
-      }
-      else if (bit_to_hide == 0 && is_odd)
-      {
-        pDct[5] = (level > 0) ? level + 1 : level - 1;
-      }
-    }
-  }
-  // END HIDE64 ENCODER -----------
+  int is_odd = (level % 2 != 0) ? 1 : 0;
+  if (bit_to_hide == 1 && !is_odd)
+    pDct[5] = (level > 0) ? level + 1 : level - 1;
+  else if (bit_to_hide == 0 && is_odd)
+    pDct[5] = (level > 0) ? level + 1 : level - 1;
+}
 
   void WelsQuant4x4_c(int16_t *pDct, const int16_t *pFF, const int16_t *pMF)
   {
