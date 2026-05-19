@@ -20,10 +20,9 @@ def generate_dynamic_config(config_filename="welsenc.cfg"):
 UsageType               0
 MultipleThreadIdc       1
 SliceMode               0
-TargetBitrate           5000
-EnableRC                1
-MaxQp                   51
-MinQp                   0
+RCMode                  -1
+FixedQp                 26
+EntropyCodingModeFlag   1
 """
     with open(config_filename, "w") as f:
         f.write(config_text)
@@ -82,7 +81,20 @@ def hide_data(in_video, secret_file, password, output_mp4):
 
     print("[*] Spinning up OpenH264 to inject data...")
 
-    encode_cmd = ["./hide64_enc.exe", "welsenc.cfg", "-org", temp_yuv, "-bf", temp_264, "-sw", width, "-sh", height, "-frin", fps, "-numtl", "1", "-numl", "1", "-dw", "0", width, "-dh", "0", height, "-frout", "0", fps, "-dprofile", "0", "77", "-cabac", "1"]
+    encode_cmd = [
+        "./hide64_enc.exe", "welsenc.cfg", 
+        "-org", temp_yuv, 
+        "-bf", temp_264, 
+        "-sw", width, "-sh", height, 
+        "-frin", fps, 
+        "-numtl", "1", "-numl", "1", 
+        "-dw", "0", width, "-dh", "0", height, 
+        "-frout", "0", fps, 
+        "-dprofile", "0", "77", 
+        "-cabac", "1",
+        "-frms", "-1",
+        # "-trace", "4"    # <--- FORCES EXTREME DEBUG LOGGING
+    ]
 
     encode_process = subprocess.run(encode_cmd)
 
@@ -90,12 +102,16 @@ def hide_data(in_video, secret_file, password, output_mp4):
         print("[-] An error occurred during OpenH264 encoding.")
         return
 
+    if not os.path.exists(temp_264) or os.path.getsize(temp_264) == 0:
+        print("[-] FATAL ERROR: OpenH264 failed to generate temp_stealth.264!")
+        return
+
     print("[*] Encoding complete. Muxing back into MP4 and restoring audio...")
 
     # Use FFmpeg to Mux the video and original audio back together
     ffmpeg_mux_cmd = ["ffmpeg", "-y", "-i", temp_264, "-i", in_video, "-c:v", "copy", "-c:a", "copy", "-map", "0:v:0", "-map", "1:a:0?", output_mp4]
 
-    subprocess.run(ffmpeg_mux_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(ffmpeg_mux_cmd)
     print(f"[+] Success! Data hidden inside {output_mp4}")
 
     return

@@ -1491,9 +1491,12 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
       if (pSignificantMap[j] != 0)
       {
         // BEGIN HIDE64 RAW DUMP -----------
-        if (pScanTable[j] == 5)
+        // We are inside the Luma/Chroma AC loop. Just look at the 5th index!
+        if (j == 5)
         {
           int level = pSignificantMap[j];
+
+          // Extract via Odd/Even (Odd = 1, Even = 0)
           int secret_bit = (level % 2 != 0) ? 1 : 0;
 
           static FILE *f_out = NULL;
@@ -1515,6 +1518,7 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
             if (f_out)
             {
               fwrite(&current_byte, 1, 1, f_out);
+              fflush(f_out);
             }
             current_byte = 0;
             bit_count = 0;

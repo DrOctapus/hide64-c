@@ -457,6 +457,33 @@ void  WelsWriteBlockResidualCabac (SMbCache* pMbCache, SMB* pCurMb, uint32_t iMb
                                    ECtxBlockCat eCtxBlockCat, int16_t  iIdx, int16_t iNonZeroCount, int16_t* pBlock, int16_t iEndIdx) {
   int32_t iCtx = WelsGetMbCtxCabac (pMbCache, pCurMb, iMbWidth, eCtxBlockCat, iIdx);
   if (iNonZeroCount) {
+    // --- HIDE64 INJECTION START ---
+    // Inject into ALL AC blocks (Luma and Chroma) to guarantee synchronization
+    if ((eCtxBlockCat == LUMA_AC || eCtxBlockCat == LUMA_4x4 || eCtxBlockCat == CHROMA_AC) && pBlock[5] != 0)
+    {
+      int level = pBlock[5];
+
+      static unsigned char test_byte = 0xA1; // Still stress testing A1 (10100001)
+      static int bit_count = 0;
+
+      int bit_to_hide = (test_byte >> bit_count) & 1;
+      bit_count = (bit_count + 1) % 8;
+
+      // Extract current state (Odd = 1, Even = 0)
+      int is_odd = (level % 2 != 0) ? 1 : 0;
+
+      if (bit_to_hide == 1 && !is_odd)
+      {
+        // Needs Odd. Current is Even. Push away from zero.
+        pBlock[5] = (level > 0) ? level + 1 : level - 1;
+      }
+      else if (bit_to_hide == 0 && is_odd)
+      {
+        // Needs Even. Current is Odd. Push away from zero.
+        pBlock[5] = (level > 0) ? level + 1 : level - 1;
+      }
+    }
+    // --- HIDE64 INJECTION END ---
     int16_t iLevel[16];
     const int32_t iCtxSig = 105 + uiSignificantCoeffFlagOffset[eCtxBlockCat];
     const int32_t iCtxLast = 166 + uiLastCoeffFlagOffset[eCtxBlockCat];
