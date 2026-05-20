@@ -59,7 +59,7 @@ def hide_data(in_video, secret_file, password, output_mp4):
 
     prep_payload(secret_file, password)
 
-    temp_yuv = "temp_raw.yuv"
+    temp_yuv = f"{in_video.split("/")[-1]}.yuv"
     temp_264 = "temp_stealth.264"
 
     # Use FFprobe to get exact dimensions and framerate
@@ -69,10 +69,10 @@ def hide_data(in_video, secret_file, password, output_mp4):
     width = str(video_info["width"])
     height = str(video_info["height"])
     num, den = map(int, video_info["r_frame_rate"].split("/"))
-    fps = str(int(num / den))
+    fps_float = str(num / den)
 
-    print(f"[*] Target Video Profile: {width}x{height} @ {fps} FPS")
-
+    print(f"[*] Target Video Profile: {width}x{height} @ {fps_float} FPS")
+    
     # Use FFmpeg to Decode to Raw YUV
     print("[*] Decoding MP4 to Raw YUV...")
     if not os.path.exists(temp_yuv):
@@ -87,15 +87,15 @@ def hide_data(in_video, secret_file, password, output_mp4):
         "-org", temp_yuv, 
         "-bf", temp_264, 
         "-sw", width, "-sh", height, 
-        "-frin", fps, 
+        "-frin", fps_float,
         "-numtl", "1", "-numl", "1", 
         "-dw", "0", width, "-dh", "0", height, 
-        "-frout", "0", fps, 
+        "-frout", "0", fps_float,
         "-dprofile", "0", "77", 
         "-cabac", "1",
         "-frms", "-1",
     ]
-
+    
     encode_process = subprocess.run(encode_cmd, stdout=subprocess.DEVNULL)
 
     if encode_process.returncode != 0:
@@ -107,16 +107,37 @@ def hide_data(in_video, secret_file, password, output_mp4):
         return
 
     print("[*] Encoding complete. Muxing back into MP4 and restoring audio...")
+    
+    temp_mp4 = "temp_clean_video.mp4"
 
-    # Use FFmpeg to Mux the video and original audio back together
-    ffmpeg_mux_cmd = ["ffmpeg", "-y", "-i", temp_264, "-i", in_video, "-c:v", "copy", "-c:a", "copy", "-map", "0:v:0", "-map", "1:a:0?", output_mp4]
+    # THE FIX - STEP 1: Wrap the raw .264 into an MKV container.
+    # The MKV muxer perfectly understands raw H.264 and generates flawless timestamps.
+    subprocess.run([
+        "ffmpeg", "-y", 
+        "-r", fps_float,                 # Treat input as exact FPS
+        "-i", temp_264, 
+        "-c:v", "copy",                  # Still copy the bits (steganography is safe!)
+        "-fflags", "+genpts",            # Regenerate timestamps
+        "-fps_mode", "cfr",              # Enforce constant frame rate
+        "-video_track_timescale", "90k", # Standardize timebase
+        temp_mp4
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    ffmpeg_mux_cmd = [
+        "ffmpeg", "-y", 
+        "-i", temp_mp4, 
+        "-i", in_video, 
+        "-c:v", "copy", "-c:a", "copy", 
+        "-map", "0:v:0", "-map", "1:a:0?", 
+        output_mp4
+    ]
+    
     subprocess.run(ffmpeg_mux_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"[+] Success! Data hidden inside {output_mp4}")
 
-    return
     # Cleanup
-    for f in [temp_yuv, temp_264, "payload.bin", "welsenc.cfg"]:
+    # temp_yuv
+    for f in [temp_264, temp_mp4, "payload.bin", "welsenc.cfg"]:
         if os.path.exists(f):
             os.remove(f)
 
@@ -125,64 +146,67 @@ def unhide_data(stego_video, password):
     print(f"[*] Starting extraction on {stego_video}...")
 
     temp_264 = "temp_extract.264"
-    dummy_yuv = "dummy_out.yuv"
-
-    # Demux the MP4 into a raw H264 bitstream
-    print("[*] Ripping raw H.264 bitstream from MP4...")
-    ffmpeg_cmd = ["ffmpeg", "-y", "-i", stego_video, "-c:v", "copy", "-bsf:v", "h264_mp4toannexb", temp_264]
-    subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    # Run the modified unhide64 Decoder
-    print("[*] Running OpenH264 decoder to extract binary payload...")
-    subprocess.run(["./hide64_dec.exe", temp_264, dummy_yuv])
-
-    extracted_files = glob.glob("extracted_payload*")
-
-    if not extracted_files:
-        print("[-] Error: No payload was extracted. Did the C++ decoder find the 'HD64' signature?")
-        return
-
-    # Grab the first matched file
-    encrypted_file = extracted_files[0]
-
-    # Decrypt
-    print(f"[*] Found payload: {encrypted_file}. Decrypting...")
-    with open(encrypted_file, "rb") as f:
-        payload = f.read()
+    dummy_yuv = "temp_out.yuv"
 
     try:
-        data = payload
-        if password:
-            fernet = Fernet(generate_key(password))
-            data = fernet.decrypt(payload)
+        # Demux the MP4 into a raw H264 bitstream
+        print("[*] Ripping raw H.264 bitstream from MP4...")
+        ffmpeg_cmd = ["ffmpeg", "-y", "-i", stego_video, "-c:v", "copy", "-bsf:v", "h264_mp4toannexb", temp_264]
+        subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        original_ext = os.path.splitext(encrypted_file)[1]
-        final_filename = f"decrypted_secret{original_ext}"
+        # Run the modified unhide64 Decoder
+        print("[*] Running OpenH264 decoder to extract binary payload...")
+        subprocess.run(["./hide64_dec.exe", temp_264, dummy_yuv])
 
-        with open(final_filename, "wb") as f:
-            f.write(data)
+        extracted_files = glob.glob("extracted_payload*")
 
-        print(f"[+] Success! Decrypted data saved to: {final_filename}")
+        if not extracted_files:
+            raise Exception("[-] Error: No payload was extracted. Did the C++ decoder find the 'HD64' signature?")
 
-        os.remove(encrypted_file)
+        # Grab the first matched file
+        encrypted_file = extracted_files[0]
 
+        # Decrypt
+        print(f"[*] Found payload: {encrypted_file}. Decrypting...")
+        with open(encrypted_file, "rb") as f:
+            payload = f.read()
+
+        try:
+            data = payload
+            if password:
+                fernet = Fernet(generate_key(password))
+                data = fernet.decrypt(payload)
+
+            original_ext = os.path.splitext(encrypted_file)[1]
+            final_filename = f"decrypted_secret{original_ext}"
+
+            with open(final_filename, "wb") as f:
+                f.write(data)
+
+            print(f"[+] Success! Decrypted data saved to: {final_filename}")
+
+            os.remove(encrypted_file)
+
+        except Exception as e:
+            print(f"[-] Decryption failed! Wrong password or corrupted payload. (Error: {e})")
+
+        print("[*] Cleaning up temporary files...")
     except Exception as e:
-        print(f"[-] Decryption failed! Wrong password or corrupted payload. (Error: {e})")
-
-    print("[*] Cleaning up temporary files...")
-    return
-    for f in [temp_264, dummy_yuv]:
-        if os.path.exists(f):
-            os.remove(f)
+        print(e.args[0])
+    finally:
+        for f in [temp_264, dummy_yuv]:
+            if os.path.exists(f):
+                os.remove(f)
 
 
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    input_video = os.path.join(script_dir, "smallest_fractal.mp4")
+    input_video = os.path.join(script_dir, "v_smallest_fractal.mp4")
     secret = os.path.join(script_dir, "pass.txt")
-    output_video = os.path.join(script_dir, "final_stego_video.mp4")
+    output_video = os.path.join(script_dir, "stego_video.mp4")
 
     pwd = None
     hide_data(input_video, secret, pwd, output_video)
     print("---------------")
-    unhide_data(output_video, pwd)
+    if os.path.exists(output_video):
+        unhide_data(output_video, pwd)
