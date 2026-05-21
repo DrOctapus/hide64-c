@@ -77,7 +77,7 @@ def prep_payload(secret_file, password):
         f.write(header + payload)
         
     total_bytes = payload_size + 12
-    print(f"[+] Payload ready: {total_bytes} bytes.")
+    print(f"[+] Payload ready: {f"{total_bytes / 1024:.2f} KB" if total_bytes > 1024 else f"{total_bytes} bytes"}")
     return total_bytes
 
 
@@ -173,8 +173,11 @@ def hide_data(in_video, secret_file, output_mp4, password=None):
                 sys.stdout.flush()
                 
         p_mux.communicate() 
-
         print()
+        
+        if os.path.exists("payload.bin"):
+            raise Exception("[-] FATAL: The video was too short. The payload was not fully injected.")
+
         print("[*] Stitching audio track")
         
         # Stitch audio and video

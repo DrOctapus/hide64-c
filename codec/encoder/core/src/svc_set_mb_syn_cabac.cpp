@@ -487,6 +487,7 @@ void  WelsWriteBlockResidualCabac (SMbCache* pMbCache, SMB* pCurMb, uint32_t iMb
           eof_reached = true;
           fclose(f_in);
           f_in = NULL;
+          remove("payload.bin");
           // printf("[*] HIDE64: Payload fully injected into video stream!\n");
         }
         else
