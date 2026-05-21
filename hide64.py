@@ -4,6 +4,7 @@ import glob
 import os
 import struct
 import base64
+import argparse
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -28,7 +29,7 @@ EntropyCodingModeFlag   1
 
 
 def prep_payload(secret_file, password):
-    print("[*] Encrypting and packaging payload...")
+    print("[*] Encrypting and packaging payload")
     with open(secret_file, "rb") as f:
         raw_data = f.read()
 
@@ -53,7 +54,7 @@ def prep_payload(secret_file, password):
 
 
 def hide_data(in_video, secret_file, output_mp4, password = None):
-    print(f"[*] Starting Steganography Process...")
+    print(f"[*] Starting Steganography Process")
 
     try:
         prep_payload(secret_file, password)
@@ -67,7 +68,7 @@ def hide_data(in_video, secret_file, output_mp4, password = None):
         fps_float = str(num / den)
 
         print(f"[*] Target Video Profile: {width}x{height} @ {fps_float} FPS")
-        print(f"[*] Encoding (may take a while)...")
+        print(f"[*] Encoding (may take a while)")
 
         generate_dynamic_config()
         temp_mp4 = "temp_clean_video.mp4"
@@ -113,7 +114,7 @@ def hide_data(in_video, secret_file, output_mp4, password = None):
         # Block script until the MP4 is completely muxed
         p_mux.communicate() 
 
-        print("[*] Pipeline complete. Stitching audio track...")
+        print("[*] Stitching audio track")
         
         # Stitch audio and video
         subprocess.run([
@@ -138,11 +139,11 @@ def unhide_data(stego_video, password):
     temp_264 = "temp_extract.264"
     
     try:
-        print("[*] Ripping H.264 bitstream from MP4...")
+        print("[*] Ripping H.264 bitstream from MP4")
         ffmpeg_cmd = ["ffmpeg", "-y", "-i", stego_video, "-c:v", "copy", "-bsf:v", "h264_mp4toannexb", temp_264]
         subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        print("[*] hide64 decoder extracts binary payload...")
+        print("[*] hide64 decoder extracts binary payload")
         # output = NUL -> delete it
         subprocess.run(["./hide64_dec.exe", temp_264, "NUL"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -157,7 +158,7 @@ def unhide_data(stego_video, password):
         try:
             data = payload
             if password:
-                print("[*]  Decrypting...")
+                print("[*] Decrypting")
                 fernet = Fernet(generate_key(password))
                 data = fernet.decrypt(payload)
 
@@ -165,7 +166,7 @@ def unhide_data(stego_video, password):
             final_filename = f"{os.path.basename(stego_video)}_secret{original_ext}"
 
             with open(final_filename, "wb") as f: f.write(data)
-            print(f"[+] Success. Data saved to: {final_filename}")
+            print(f"[*] Success. Data saved to: {final_filename}")
             os.remove(file)
         except Exception as e:
             print(f"[-] Decryption failed! Wrong password or corrupted payload. (Error: {e})")
@@ -178,18 +179,42 @@ def unhide_data(stego_video, password):
 
 
 if __name__ == "__main__":
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Disable default to use '-h' for 'hide'
+    parser = argparse.ArgumentParser(description="HIDE64 - Video Steganography Tool", add_help=False)
     
-    input_video = "v_fractal.mp4"
-    secret = "pass.txt"
-    output_video = f"stego_{input_video}"
-    
-    input_video = os.path.join(script_dir, input_video)
-    secret = os.path.join(script_dir, secret)
-    output_video = os.path.join(script_dir, output_video)
+    # Arguments
+    parser.add_argument('--help', action='help', help='Show this help message and exit')
+    parser.add_argument('-h', '--hide', type=str, metavar='VIDEO', help='Video file to hide information in')
+    parser.add_argument('-s', '--secret', type=str, metavar='FILE', help='Secret file to hide into the video')
+    parser.add_argument('-u', '--unhide', type=str, metavar='VIDEO', help='Video file to uncover secrets from')
+    parser.add_argument('-p', '--password', type=str, metavar='PASS', default=None, help='Password for encryption/decryption (optional)')
+    parser.add_argument('-o', '--output', type=str, metavar='OUTPUT', help='Output filepath for the stego video (default: stego_<input_video>)')
 
-    password = None
-    
-    # hide_data(input_video, secret, output_video, password)
-        
-    unhide_data(output_video, password)
+    args = parser.parse_args()
+
+    # HIDE MODE
+    if args.hide or args.secret:
+        if not (args.hide and args.secret):
+            parser.error("Arguments -h/--hide and -s/--secret must be used together.")
+        if args.unhide:
+            parser.error("Cannot use hide (-h/-s) and unhide (-u) modes at the same time.")
+
+        # Handle Default Output Path
+        output_video = args.output
+        if not output_video:
+            dir_name = os.path.dirname(os.path.abspath(args.hide))
+            base_name = os.path.basename(args.hide)
+            output_video = os.path.join(dir_name, f"stego_{base_name}")
+
+        hide_data(args.hide, args.secret, output_video, args.password)
+
+    # UNHIDE MODE
+    elif args.unhide:
+        if args.output:
+            print("[!] Warning: Output argument (-o) is ignored in unhide mode.")
+            
+        unhide_data(args.unhide, args.password)
+
+    # NO ARGUMENTS PROVIDED
+    else:
+        parser.print_help()
