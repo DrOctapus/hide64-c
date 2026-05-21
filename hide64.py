@@ -1,10 +1,12 @@
 import subprocess
 import json
+import sys
 import glob
 import os
 import struct
 import base64
 import argparse
+import re
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -50,25 +52,50 @@ def prep_payload(secret_file, password):
 
     with open("payload.bin", "wb") as f:
         f.write(header + payload)
-    print(f"[+] Payload ready: {payload_size + 12} bytes.")
+        
+    total_bytes = payload_size + 12
+    print(f"[+] Payload ready: {total_bytes} bytes.")
+    return total_bytes
 
 
-def hide_data(in_video, secret_file, output_mp4, password = None):
+def hide_data(in_video, secret_file, output_mp4, password=None):
     print(f"[*] Starting Steganography Process")
 
     try:
-        prep_payload(secret_file, password)
+        payload_size = prep_payload(secret_file, password)
 
         # Get info about input mp4
-        cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate", "-of", "json", in_video]
+        cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,nb_frames,duration", "-of", "json", in_video]
         result = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
         video_info = json.loads(result.stdout)["streams"][0]
         width, height = str(video_info["width"]), str(video_info["height"])
         num, den = map(int, video_info["r_frame_rate"].split("/"))
         fps_float = str(num / den)
+        fps_fraction = f"{num}/{den}"
 
-        print(f"[*] Target Video Profile: {width}x{height} @ {fps_float} FPS")
-        print(f"[*] Encoding (may take a while)")
+        # Calculate Total Frames
+        if "nb_frames" in video_info:
+            total_frames = int(video_info["nb_frames"])
+        elif "duration" in video_info:
+            total_frames = int(float(video_info["duration"]) * float(fps_float))
+        else:
+            total_frames = 1000 # Fallback
+
+        print(f"[*] Target Video Profile: {width}x{height} @ {fps_float} FPS ({total_frames} frames)")
+
+        # capacity estimation
+        total_4x4_blocks_per_frame = (int(width) / 4) * (int(height) / 4) * 1.5
+        theoretical_max_bytes = int((total_4x4_blocks_per_frame * total_frames) / 8)
+        
+        # conservative estimate: Assume only 5% of AC blocks will actually have high-frequency detail
+        safe_capacity_bytes = int(theoretical_max_bytes * 0.018) 
+        
+        print(f"[*] Safe Storage Capacity: ~{safe_capacity_bytes / 1024:.2f} KB")
+
+        if payload_size > theoretical_max_bytes:
+            raise Exception(f"[-] FATAL: Payload ({payload_size} bytes) exceeds absolute mathematical capacity ({theoretical_max_bytes} bytes). Use a longer video.")
+        elif payload_size > safe_capacity_bytes:
+            print(f"[!] WARNING: Payload ~({payload_size / 1024:.2f} KB) exceeds the safe detailed-block capacity. It may be truncated. Proceeding anyway")
 
         generate_dynamic_config()
         temp_mp4 = "temp_clean_video.mp4"
@@ -92,28 +119,39 @@ def hide_data(in_video, secret_file, output_mp4, password = None):
         # Mux Raw H.264 to temp MP4 without audio
         ffmpeg_mux_cmd = [
             "ffmpeg", "-y",
-            "-v", "error",
             "-r", fps_float,
             "-i", "-", 
             "-c:v", "copy",
-            "-fflags", "+genpts",            # Regenerate timestamps
-            "-fps_mode", "cfr",              # Enforce constant frame rate
-            "-video_track_timescale", "90k", # Standardize timebase
+            "-fflags", "+genpts",            
+            "-fps_mode", "cfr",              
+            "-video_track_timescale", "90k", 
             temp_mp4
         ]
 
         # Link the pipes
         p_decode = subprocess.Popen(ffmpeg_decode_cmd, stdout=subprocess.PIPE)
         p_encode = subprocess.Popen(encode_cmd, stdin=p_decode.stdout, stdout=subprocess.PIPE)
-        p_mux = subprocess.Popen(ffmpeg_mux_cmd, stdin=p_encode.stdout)
+        
+        p_mux = subprocess.Popen(ffmpeg_mux_cmd, stdin=p_encode.stdout, stderr=subprocess.PIPE, text=True, bufsize=1)
 
-        # Allow pipelines to close autonomously and propagate SIGPIPE
         p_decode.stdout.close() 
         p_encode.stdout.close()
         
-        # Block script until the MP4 is completely muxed
+        # progress bar
+        frame_re = re.compile(r"frame=\s*(\d+)")
+        
+        for line in p_mux.stderr:
+            match = frame_re.search(line)
+            if match:
+                current_frame = int(match.group(1))
+                percent = min(100, int((current_frame / total_frames) * 100))
+                bar = "#" * (percent // 2) + "-" * (50 - (percent // 2))
+                sys.stdout.write(f"\r[*] Encoding: [{bar}] {percent}% ({current_frame}/{total_frames} frames)")
+                sys.stdout.flush()
+                
         p_mux.communicate() 
 
+        print()
         print("[*] Stitching audio track")
         
         # Stitch audio and video
