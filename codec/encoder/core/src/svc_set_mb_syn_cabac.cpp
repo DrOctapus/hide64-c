@@ -475,7 +475,7 @@ void  WelsWriteBlockResidualCabac (SMbCache* pMbCache, SMB* pCurMb, uint32_t iMb
         }
         else
         {
-          printf("[*] HIDE64: Successfully opened payload.bin for injection!\n");
+          // printf("[*] HIDE64: Successfully opened payload.bin for injection!\n");
         }
       }
 
@@ -487,7 +487,7 @@ void  WelsWriteBlockResidualCabac (SMbCache* pMbCache, SMB* pCurMb, uint32_t iMb
           eof_reached = true;
           fclose(f_in);
           f_in = NULL;
-          printf("[*] HIDE64: Payload fully injected into video stream!\n");
+          // printf("[*] HIDE64: Payload fully injected into video stream!\n");
         }
         else
         {

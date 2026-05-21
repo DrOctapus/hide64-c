@@ -1523,7 +1523,7 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
               {
                 stego_state = 1;
                 bytes_read = 0;
-                printf("[+] HIDE64: Signature 'HD64' found! Extracting header...\n");
+                // printf("[+] HIDE64: Signature 'HD64' found! Extracting header...\n");
               }
             }
             else if (stego_state == 1)
@@ -1538,7 +1538,7 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
                 payload_size = size_buf[0] | (size_buf[1] << 8) | (size_buf[2] << 16) | (size_buf[3] << 24);
                 stego_state = 2;
                 bytes_read = 0;
-                printf("[+] HIDE64: Payload size detected: %u bytes\n", payload_size);
+                // printf("[+] HIDE64: Payload size detected: %u bytes\n", payload_size);
               }
             }
             else if (stego_state == 2)
@@ -1557,11 +1557,11 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
 
                 if (f_out)
                 {
-                  printf("[+] HIDE64: Extracting payload to '%s' ...\n", filename);
+                  // printf("[+] HIDE64: Extracting payload to '%s' ...\n", filename);
                 }
                 else
                 {
-                  printf("[-] HIDE64: FATAL ERROR - Could not open %s for writing!\n", filename);
+                  // printf("[-] HIDE64: FATAL ERROR - Could not open %s for writing!\n", filename);
                 }
 
                 stego_state = 3;
@@ -1581,7 +1581,7 @@ int32_t ParseResidualBlockCabac (PWelsNeighAvail pNeighAvail, uint8_t* pNonZeroC
               {
                 if (f_out)
                   fclose(f_out);
-                printf("[+] HIDE64: Steganography extraction complete! %u bytes saved.\n", payload_size);
+                // printf("[+] HIDE64: Steganography extraction complete! %u bytes saved.\n", payload_size);
 
                 exit(0);
               }

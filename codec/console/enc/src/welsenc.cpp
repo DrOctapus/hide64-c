@@ -67,7 +67,7 @@ int     g_iEncodedFrame  = 0;
 
 #include "typedefs.h"
 
-#ifdef _MSC_VER
+#if defined(_WIN32) || defined(_WIN64)
 #include <io.h>     /* _setmode() */
 #include <fcntl.h>  /* _O_BINARY */
 #endif//_MSC_VER
@@ -874,10 +874,21 @@ int ProcessEncoding (ISVCEncoder* pPtrEnc, int argc, char** argv, bool bConfigFi
   // Inactive with sink with output file handler
   if (fs.strBsFile.length() > 0) {
     bool bFileOpenErr = false;
-    if (sSvcParam.iSpatialLayerNum == 1 || fs.bEnableMultiBsFile == false) {
-      pFpBs[0] = fopen (fs.strBsFile.c_str(), "wb");
-      bFileOpenErr = (pFpBs[0] == NULL);
-    } else { //enable multi bs file writing
+    if (sSvcParam.iSpatialLayerNum == 1 || fs.bEnableMultiBsFile == false)
+    {
+      if (fs.strBsFile == "-")
+      {
+        pFpBs[0] = stdout;
+        bFileOpenErr = false;
+      }
+      else
+      {
+        pFpBs[0] = fopen(fs.strBsFile.c_str(), "wb");
+        bFileOpenErr = (pFpBs[0] == NULL);
+      }
+    }
+    else
+    { // enable multi bs file writing
       string filename_layer;
       string add_info[4] = {"_layer0", "_layer1", "_layer2", "_layer3"};
       string::size_type found = fs.strBsFile.find_last_of ('.');
@@ -908,43 +919,56 @@ int ProcessEncoding (ISVCEncoder* pPtrEnc, int argc, char** argv, bool bConfigFi
   }
 #endif
 
-  pFileYUV = fopen (fs.strSeqFile.c_str(), "rb");
-  if (pFileYUV != NULL) {
+  if (fs.strSeqFile == "-")
+  {
+    pFileYUV = stdin;
+    iTotalFrameMax = INT_MAX; // Fixes 32-bit overflow by looping until EOF!
+  }
+  else
+  {
+    pFileYUV = fopen(fs.strSeqFile.c_str(), "rb");
+    if (pFileYUV != NULL)
+    {
 #if defined(_WIN32) || defined(_WIN64)
 // MinGW defines _WIN32 but not _MSC_VER — include it in the 64-bit seek path.
 // Without this MinGW falls through to the 32-bit fseek/ftell below, which fails
 // for YUV files > 2 GB, leaving iTotalFrameMax = -1 and encoding zero frames.
 #if _MSC_VER >= 1400 || defined(__MINGW32__) || defined(__MINGW64__)
-    if (!_fseeki64 (pFileYUV, 0, SEEK_END)) {
-      int64_t i_size = _ftelli64 (pFileYUV);
-      _fseeki64 (pFileYUV, 0, SEEK_SET);
-      iTotalFrameMax = WELS_MAX ((int32_t) (i_size / kiPicResSize), iTotalFrameMax);
-    }
+      if (!_fseeki64(pFileYUV, 0, SEEK_END))
+      {
+        int64_t i_size = _ftelli64(pFileYUV);
+        _fseeki64(pFileYUV, 0, SEEK_SET);
+        iTotalFrameMax = WELS_MAX((int32_t)(i_size / kiPicResSize), iTotalFrameMax);
+      }
 #else
-    // Legacy fallback for pre-VS2005 MSVC. ftell returns 'long' which is
-    // 32-bit on Windows and will silently overflow for YUV files > 2 GB.
-    // If you still target this path, replace ftell with _ftelli64.
-    if (!fseek (pFileYUV, 0, SEEK_END)) {
-      long i_size_long = ftell (pFileYUV);
-      int64_t i_size = (i_size_long >= 0) ? (int64_t)i_size_long : 0;
-      fseek (pFileYUV, 0, SEEK_SET);
-      iTotalFrameMax = WELS_MAX ((int32_t) (i_size / kiPicResSize), iTotalFrameMax);
-    }
+      // Legacy fallback for pre-VS2005 MSVC. ftell returns 'long' which is
+      // 32-bit on Windows and will silently overflow for YUV files > 2 GB.
+      // If you still target this path, replace ftell with _ftelli64.
+      if (!fseek(pFileYUV, 0, SEEK_END))
+      {
+        long i_size_long = ftell(pFileYUV);
+        int64_t i_size = (i_size_long >= 0) ? (int64_t)i_size_long : 0;
+        fseek(pFileYUV, 0, SEEK_SET);
+        iTotalFrameMax = WELS_MAX((int32_t)(i_size / kiPicResSize), iTotalFrameMax);
+      }
 #endif
 #else
-    if (!fseeko (pFileYUV, 0, SEEK_END)) {
-      int64_t i_size = ftello (pFileYUV);
-      fseeko (pFileYUV, 0, SEEK_SET);
-      iTotalFrameMax = WELS_MAX ((int32_t) (i_size / kiPicResSize), iTotalFrameMax);
-    }
+      if (!fseeko(pFileYUV, 0, SEEK_END))
+      {
+        int64_t i_size = ftello(pFileYUV);
+        fseeko(pFileYUV, 0, SEEK_SET);
+        iTotalFrameMax = WELS_MAX((int32_t)(i_size / kiPicResSize), iTotalFrameMax);
+      }
 #endif
-  } else {
-    fprintf (stderr, "Unable to open source sequence file (%s), check corresponding path!\n",
-             fs.strSeqFile.c_str());
-    iRet = 1;
-    goto INSIDE_MEM_FREE;
+    }
+    else
+    {
+      fprintf(stderr, "Unable to open source sequence file (%s), check corresponding path!\n",
+              fs.strSeqFile.c_str());
+      iRet = 1;
+      goto INSIDE_MEM_FREE;
+    }
   }
-
   iFrameIdx = 0;
   while (iFrameIdx < iTotalFrameMax && (((int32_t)fs.uiFrameToBeCoded <= 0)
                                         || (iFrameIdx < (int32_t)fs.uiFrameToBeCoded))) {
@@ -1039,9 +1063,9 @@ int ProcessEncoding (ISVCEncoder* pPtrEnc, int argc, char** argv, bool bConfigFi
 
   if (iActualFrameEncodedCount > 0) {
     double dElapsed = iTotal / 1e6;
-    printf ("Width:\t\t%d\nHeight:\t\t%d\nFrames:\t\t%d\nencode time:\t%f sec\nFPS:\t\t%f fps\n",
-            sSvcParam.iPicWidth, sSvcParam.iPicHeight,
-            iActualFrameEncodedCount, dElapsed, (iActualFrameEncodedCount * 1.0) / dElapsed);
+    // printf ("Width:\t\t%d\nHeight:\t\t%d\nFrames:\t\t%d\nencode time:\t%f sec\nFPS:\t\t%f fps\n",
+    //         sSvcParam.iPicWidth, sSvcParam.iPicHeight,
+    //         iActualFrameEncodedCount, dElapsed, (iActualFrameEncodedCount * 1.0) / dElapsed);
 #if defined (WINDOWS_PHONE)
     g_fFPS = (iActualFrameEncodedCount * 1.0f) / (float) dElapsed;
     g_dEncoderTime = dElapsed;
@@ -1133,7 +1157,7 @@ int main (int argc, char** argv)
   ISVCEncoder* pSVCEncoder = NULL;
   int iRet = 0;
 
-#ifdef _MSC_VER
+#if defined(_WIN32) || defined(_WIN64)
   _setmode (_fileno (stdin), _O_BINARY);  /* thanks to Marcoss Morais <morais at dee.ufcg.edu.br> */
   _setmode (_fileno (stdout), _O_BINARY);
 
