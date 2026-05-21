@@ -30,6 +30,10 @@
  *
  */
 
+#if defined(__linux__) || defined(__unix__)
+#  define _FILE_OFFSET_BITS 64
+#endif
+
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <string.h>
@@ -87,10 +91,6 @@ int     g_iEncodedFrame  = 0;
 #define HAVE_PROCESS_AFFINITY
 #endif
 #endif /* _WIN32 */
-
-#if defined(__linux__) || defined(__unix__)
-#define _FILE_OFFSET_BITS 64
-#endif
 
 #include <iostream>
 using namespace std;
@@ -911,15 +911,22 @@ int ProcessEncoding (ISVCEncoder* pPtrEnc, int argc, char** argv, bool bConfigFi
   pFileYUV = fopen (fs.strSeqFile.c_str(), "rb");
   if (pFileYUV != NULL) {
 #if defined(_WIN32) || defined(_WIN64)
-#if _MSC_VER >= 1400
+// MinGW defines _WIN32 but not _MSC_VER — include it in the 64-bit seek path.
+// Without this MinGW falls through to the 32-bit fseek/ftell below, which fails
+// for YUV files > 2 GB, leaving iTotalFrameMax = -1 and encoding zero frames.
+#if _MSC_VER >= 1400 || defined(__MINGW32__) || defined(__MINGW64__)
     if (!_fseeki64 (pFileYUV, 0, SEEK_END)) {
       int64_t i_size = _ftelli64 (pFileYUV);
       _fseeki64 (pFileYUV, 0, SEEK_SET);
       iTotalFrameMax = WELS_MAX ((int32_t) (i_size / kiPicResSize), iTotalFrameMax);
     }
 #else
+    // Legacy fallback for pre-VS2005 MSVC. ftell returns 'long' which is
+    // 32-bit on Windows and will silently overflow for YUV files > 2 GB.
+    // If you still target this path, replace ftell with _ftelli64.
     if (!fseek (pFileYUV, 0, SEEK_END)) {
-      int64_t i_size = ftell (pFileYUV);
+      long i_size_long = ftell (pFileYUV);
+      int64_t i_size = (i_size_long >= 0) ? (int64_t)i_size_long : 0;
       fseek (pFileYUV, 0, SEEK_SET);
       iTotalFrameMax = WELS_MAX ((int32_t) (i_size / kiPicResSize), iTotalFrameMax);
     }
