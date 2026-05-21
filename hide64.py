@@ -134,7 +134,7 @@ def hide_data(in_video, secret_file, output_mp4, password = None):
             if os.path.exists(f): os.remove(f)
 
 def unhide_data(stego_video, password):
-    print(f"[*] Extraction on {stego_video}...")
+    print(f"[*] Extraction on {stego_video}")
     temp_264 = "temp_extract.264"
     
     try:
@@ -143,15 +143,16 @@ def unhide_data(stego_video, password):
         subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         print("[*] hide64 decoder extracts binary payload...")
-        subprocess.run(["./hide64_dec.exe", temp_264, "NUL"]) # send to NUL = delete it
+        # output = NUL -> delete it
+        subprocess.run(["./hide64_dec.exe", temp_264, "NUL"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         extracted_files = glob.glob("extracted_payload*")
         if not extracted_files:
             raise Exception("[-] Error: No payload was extracted or detected")
 
-        encrypted_file = extracted_files[0]
-        print(f"[*] Found payload: {encrypted_file}")
-        with open(encrypted_file, "rb") as f: payload = f.read()
+        file = extracted_files[0]
+        print(f"[*] Found payload: {file}")
+        with open(file, "rb") as f: payload = f.read()
 
         try:
             data = payload
@@ -160,12 +161,12 @@ def unhide_data(stego_video, password):
                 fernet = Fernet(generate_key(password))
                 data = fernet.decrypt(payload)
 
-            original_ext = os.path.splitext(encrypted_file)[1]
-            final_filename = f"{os.path.basename(stego_video.split)}_secret{original_ext}"
+            original_ext = os.path.splitext(file)[1]
+            final_filename = f"{os.path.basename(stego_video)}_secret{original_ext}"
 
             with open(final_filename, "wb") as f: f.write(data)
             print(f"[+] Success. Data saved to: {final_filename}")
-            os.remove(encrypted_file)
+            os.remove(file)
         except Exception as e:
             print(f"[-] Decryption failed! Wrong password or corrupted payload. (Error: {e})")
 
@@ -179,7 +180,7 @@ def unhide_data(stego_video, password):
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    input_video = "v_music.mp4"
+    input_video = "v_fractal.mp4"
     secret = "pass.txt"
     output_video = f"stego_{input_video}"
     
@@ -189,6 +190,6 @@ if __name__ == "__main__":
 
     password = None
     
-    hide_data(input_video, secret, output_video)
+    # hide_data(input_video, secret, output_video, password)
         
     unhide_data(output_video, password)
