@@ -7,9 +7,32 @@ import struct
 import base64
 import argparse
 import re
+import shutil
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+
+def check_dependencies(mode):
+    for tool in ["ffmpeg", "ffprobe"]:
+        if shutil.which(tool) is None:
+            print(f"[-] FATAL ERROR: '{tool}' is not installed or not in the system PATH.")
+            sys.exit(1)
+            
+    exe_name = "hide64_enc.exe" if mode == "hide" else "hide64_dec.exe"
+    if not os.path.isfile(exe_name):
+        print(f"[-] FATAL ERROR: '{exe_name}' not found in the current directory")
+        sys.exit(1)
+
+
+def is_valid_video(filepath):
+    # Uses ffprobe to verify the file is a valid media container with a video stream
+    try:
+        cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", filepath]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return "video" in result.stdout.strip()
+    except Exception:
+        return False
 
 
 def generate_key(password: str):
@@ -172,6 +195,7 @@ def hide_data(in_video, secret_file, output_mp4, password=None):
         for f in ["payload.bin", "welsenc.cfg", "temp_clean_video.mp4"]:
             if os.path.exists(f): os.remove(f)
 
+
 def unhide_data(stego_video, password):
     print(f"[*] Extraction on {stego_video}")
     temp_264 = "temp_extract.264"
@@ -230,12 +254,28 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # Show help if  no arguments are provided
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
+
     # HIDE MODE
     if args.hide or args.secret:
         if not (args.hide and args.secret):
             parser.error("Arguments -h/--hide and -s/--secret must be used together.")
         if args.unhide:
             parser.error("Cannot use hide (-h/-s) and unhide (-u) modes at the same time.")
+
+        # --- validation ---
+        if not os.path.isfile(args.hide):
+            parser.error(f"Input video file not found: '{args.hide}'")
+        if not os.path.isfile(args.secret):
+            parser.error(f"Secret file not found: '{args.secret}'")
+        
+        check_dependencies("hide")
+
+        if not is_valid_video(args.hide):
+            parser.error(f"Input file is not a valid video container: '{args.hide}'")
 
         # Handle Default Output Path
         output_video = args.output
@@ -250,9 +290,14 @@ if __name__ == "__main__":
     elif args.unhide:
         if args.output:
             print("[!] Warning: Output argument (-o) is ignored in unhide mode.")
+
+        # --- validation ---
+        if not os.path.isfile(args.unhide):
+            parser.error(f"Input stego video not found: '{args.unhide}'")
+
+        check_dependencies("unhide")
+
+        if not is_valid_video(args.unhide):
+            parser.error(f"Input file is not a valid video container: '{args.unhide}'")
             
         unhide_data(args.unhide, args.password)
-
-    # NO ARGUMENTS PROVIDED
-    else:
-        parser.print_help()
