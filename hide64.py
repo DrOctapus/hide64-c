@@ -110,7 +110,7 @@ def hide_data(in_video, secret_file, output_mp4, password=None):
         total_4x4_blocks_per_frame = (int(width) / 4) * (int(height) / 4) * 1.5
         theoretical_max_bytes = int((total_4x4_blocks_per_frame * total_frames) / 8)
         
-        # conservative estimate: Assume only 5% of AC blocks will actually have high-frequency detail
+        # conservative estimate: Assume only 1.8% of AC blocks will actually have high-frequency detail
         safe_capacity_bytes = int(theoretical_max_bytes * 0.018) 
         
         print(f"[*] Safe Storage Capacity: ~{safe_capacity_bytes / 1024:.2f} KB")
@@ -131,7 +131,7 @@ def hide_data(in_video, secret_file, output_mp4, password=None):
         
         # hide64 Encoder (Read stdin via "-org -", Write stdout via "-bf -")
         encode_cmd = [
-            "./hide64_enc.exe", "welsenc.cfg", 
+            "./h264enc.exe", "welsenc.cfg", 
             "-org", "-", "-bf", "-", 
             "-sw", width, "-sh", height, "-frin", fps_float, 
             "-numtl", "1", "-numl", "1", 
@@ -210,7 +210,7 @@ def unhide_data(stego_video, password):
 
         print("[*] hide64 decoder extracts binary payload")
         # output = NUL -> delete it
-        subprocess.run(["./hide64_dec.exe", temp_264, "NUL"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["./h264dec.exe", temp_264, "NUL"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         extracted_files = glob.glob("extracted_payload*")
         if not extracted_files:
