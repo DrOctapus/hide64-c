@@ -19,7 +19,7 @@ def check_dependencies(mode):
             print(f"[-] FATAL ERROR: '{tool}' is not installed or not in the system PATH.")
             sys.exit(1)
             
-    exe_name = "hide64_enc.exe" if mode == "hide" else "hide64_dec.exe"
+    exe_name = "h264enc.exe" if mode == "hide" else "h264dec.exe"
     if not os.path.isfile(exe_name):
         print(f"[-] FATAL ERROR: '{exe_name}' not found in the current directory")
         sys.exit(1)
